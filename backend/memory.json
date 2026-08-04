@@ -31,6 +31,14 @@
         {
             "role": "assistant",
             "content": "Your name is Indira! How can I assist you further today?"
+        },
+        {
+            "role": "user",
+            "content": "what is AI?"
+        },
+        {
+            "role": "assistant",
+            "content": "AI, or Artificial Intelligence, refers to the simulation of human intelligence in machines that are programmed to think and learn like humans. It encompasses various technologies and techniques, including machine learning, natural language processing, and robotics, enabling machines to perform tasks that typically require human intelligence. These tasks can include understanding language, recognizing patterns, making decisions, and solving problems. \n\nIf you have more specific questions about AI or its applications, feel free to ask!"
         }
     ]
 }
