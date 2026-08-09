@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     app_version: str = Field(default="1.0.0", alias="APP_VERSION")
     environment: str = Field(default="development", alias="ENVIRONMENT")
     debug: bool = Field(default=False, alias="DEBUG")
-    api_prefix: str = Field(default="/api", alias="API_PREFIX")
+    api_prefix: str = Field(default="/api/v1", alias="API_PREFIX")
     allowed_origins: str = Field(
         default="http://localhost:5173,http://127.0.0.1:5173",
         alias="ALLOWED_ORIGINS",

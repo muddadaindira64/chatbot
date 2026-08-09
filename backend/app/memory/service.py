@@ -1,101 +1,69 @@
-from app.memory.memory import (
-    load_memory,
-    save_memory
+import logging
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.memory.user_memory_service import (
+    get_user_memory,
+    update_user_memory,
+    get_user_memory_context,
+)
+from app.memory.analyzer import analyze_personal_information
+from app.memory.personal_memory_service import (
+    get_personal_memories_for_user,
+    upsert_personal_memory,
+    get_personal_memory_context,
 )
 
-from app.memory.models import (
-    ConversationMessage
-)
-
-from app.memory.extractor import (
-    extract_user_memory
-)
+logger = logging.getLogger(__name__)
 
 
-
-def get_memory_context():
-
-    memory = load_memory()
-
-    user = memory.user_memory
-
-
-    return f"""
-User Information:
-
-Name: {user.name}
-Role: {user.role}
-Company: {user.company}
-
-Skills:
-{", ".join(user.skills)}
-
-Projects:
-{", ".join(user.projects)}
-"""
+async def get_memory_context(
+    db: AsyncSession,
+    user_id: int
+) -> str:
+    """Get formatted personal memory context for AI prompts."""
+    context = await get_personal_memory_context(db, user_id)
+    logger.info("loaded_memory user_id=%s context=%s", user_id, context or "")
+    return context
 
 
-
-def get_history():
-
-    memory = load_memory()
-
-    return [
-        item.model_dump()
-        for item in memory.history[-5:]
-    ]
-
-
-
-def add_conversation(
-    role:str,
-    content:str
+async def update_memory(
+    db: AsyncSession,
+    user_id: int,
+    message: str
 ):
+    """Extract and persist personal memories for the authenticated user."""
+    try:
+        analysis_result = await analyze_personal_information(message)
 
-    memory = load_memory()
+        if not analysis_result.get("is_personal", False):
+            return
 
+        extracted_data = analysis_result.get("data", {}) or {}
+        if not extracted_data:
+            return
 
-    memory.history.append(
-        ConversationMessage(
-            role=role,
-            content=content
+        for key, value in extracted_data.items():
+            if key == "preferences" and isinstance(value, dict):
+                for preference_key, preference_value in value.items():
+                    if preference_value is None:
+                        continue
+                    await upsert_personal_memory(
+                        db,
+                        user_id,
+                        preference_key,
+                        str(preference_value),
+                    )
+            elif key in {"name", "role", "company"} and value:
+                await upsert_personal_memory(db, user_id, key, str(value))
+            elif key == "skills" and isinstance(value, list):
+                for skill in value:
+                    if skill:
+                        await upsert_personal_memory(db, user_id, "skill", str(skill))
+
+        logger.info(
+            "Updated personal memories for user %s with keys: %s",
+            user_id,
+            list(extracted_data.keys()),
         )
-    )
-
-
-    save_memory(memory)
-
-
-
-def update_memory(
-    message:str
-):
-
-    memory = load_memory()
-
-
-    extracted = extract_user_memory(
-        message
-    )
-
-
-    user = memory.user_memory
-
-
-    if "name" in extracted:
-        user.name = extracted["name"]
-
-
-    if "role" in extracted:
-        user.role = extracted["role"]
-
-
-    if "skills" in extracted:
-
-        for skill in extracted["skills"]:
-
-            if skill not in user.skills:
-                user.skills.append(skill)
-
-
-    save_memory(memory)
+    except Exception as exc:
+        logger.error("Failed to update memory: %s", exc)

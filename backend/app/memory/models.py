@@ -1,7 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional
 
-
 class UserMemory(BaseModel):
     name: Optional[str] = None
     role: Optional[str] = None
@@ -11,6 +10,7 @@ class UserMemory(BaseModel):
     projects: List[str] = Field(default_factory=list)
 
     preferences: dict = Field(default_factory=dict)
+
 
 
 class ConversationMessage(BaseModel):

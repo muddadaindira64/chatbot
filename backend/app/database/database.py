@@ -1,7 +1,7 @@
-from collections.abc import Generator
+from collections.abc import AsyncGenerator
 
-from sqlalchemy import create_engine
-from sqlalchemy.orm import DeclarativeBase, sessionmaker
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy.orm import DeclarativeBase
 
 from app.core.config import settings
 
@@ -10,13 +10,21 @@ class Base(DeclarativeBase):
     pass
 
 
-engine = create_engine(settings.sqlite_database_url, connect_args={"check_same_thread": False})
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+# Convert SQLite URL to async format
+database_url = settings.sqlite_database_url.replace("sqlite:///", "sqlite+aiosqlite:///")
+
+# SQLite requires check_same_thread=False for async operations
+engine = create_async_engine(
+    database_url,
+    echo=False,
+    connect_args={"check_same_thread": False}
+)
+AsyncSessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
-def get_db() -> Generator:
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
+    async with AsyncSessionLocal() as session:
+        try:
+            yield session
+        finally:
+            await session.close()

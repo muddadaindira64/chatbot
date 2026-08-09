@@ -1,46 +1,186 @@
-from datetime import datetime
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
-from sqlalchemy.orm import Session
+from app.database.models import (
+    Conversation,
+    Message
+)
 
-from app.database.models import Conversation, Message, User
 
 
-class ConversationService:
-    def __init__(self, db: Session) -> None:
-        self.db = db
+# =========================
+# CREATE NEW CHAT / THREAD
+# =========================
 
-    def create_conversation(self, user_id: int, title: str) -> Conversation:
-        conversation = Conversation(user_id=user_id, title=title, created_at=datetime.utcnow())
-        self.db.add(conversation)
-        self.db.commit()
-        self.db.refresh(conversation)
-        return conversation
+async def create_conversation(
+    db: AsyncSession,
+    user_id: int,
+    title: str = "New Chat"
+) -> Conversation:
 
-    def get_user_conversations(self, user_id: int) -> list[Conversation]:
-        return self.db.query(Conversation).filter(Conversation.user_id == user_id).order_by(Conversation.created_at.desc()).all()
+    conversation = Conversation(
+        user_id=user_id,
+        title=title
+    )
 
-    def get_conversation_messages(self, conversation_id: int, user_id: int) -> list[Message]:
-        conversation = self.db.query(Conversation).filter(Conversation.id == conversation_id, Conversation.user_id == user_id).first()
-        if conversation is None:
-            return []
-        return self.db.query(Message).filter(Message.conversation_id == conversation_id).order_by(Message.created_at.asc()).all()
+    db.add(conversation)
+    await db.commit()
+    await db.refresh(conversation)
 
-    def save_message(self, conversation_id: int, role: str, content: str) -> Message:
-        message = Message(
-            conversation_id=conversation_id,
-            role=role,
-            content=content,
-            created_at=datetime.utcnow(),
+    return conversation
+
+
+async def create_new_conversation(
+    db: AsyncSession,
+    user_id: int,
+    title: str = "New Chat"
+) -> Conversation:
+    """
+    Create a new conversation for a user.
+    Alias for create_conversation for clarity.
+    """
+    return await create_conversation(db, user_id, title)
+
+
+
+# =========================
+# GET CONVERSATIONS
+# =========================
+
+async def get_user_conversations(
+    db: AsyncSession,
+    user_id: int
+) -> list[Conversation]:
+
+    result = await db.execute(
+        select(Conversation)
+        .join(Message)
+        .where(
+            Conversation.user_id == user_id,
+            Message.role.in_(["user", "assistant"]),
         )
-        self.db.add(message)
-        self.db.commit()
-        self.db.refresh(message)
-        return message
+        .distinct()
+        .order_by(Conversation.created_at.desc())
+    )
+    return result.scalars().all()
 
-    def delete_conversation(self, conversation_id: int, user_id: int) -> bool:
-        conversation = self.db.query(Conversation).filter(Conversation.id == conversation_id, Conversation.user_id == user_id).first()
-        if conversation is None:
-            return False
-        self.db.delete(conversation)
-        self.db.commit()
-        return True
+
+
+# =========================
+# GET SINGLE CONVERSATION
+# =========================
+
+async def get_conversation(
+    db: AsyncSession,
+    conversation_id: int,
+    user_id: int
+) -> Conversation | None:
+
+    result = await db.execute(
+        select(Conversation)
+        .where(
+            Conversation.id == conversation_id,
+            Conversation.user_id == user_id
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def update_conversation_title(
+    db: AsyncSession,
+    conversation_id: int,
+    user_id: int,
+    title: str,
+) -> Conversation | None:
+    conversation = await get_conversation(db, conversation_id, user_id)
+    if not conversation:
+        return None
+
+    conversation.title = title
+    await db.commit()
+    await db.refresh(conversation)
+    return conversation
+
+
+async def delete_conversation(
+    db: AsyncSession,
+    conversation_id: int,
+    user_id: int,
+) -> bool:
+    conversation = await get_conversation(db, conversation_id, user_id)
+    if not conversation:
+        return False
+
+    await db.delete(conversation)
+    await db.commit()
+    return True
+
+
+# =========================
+# SAVE MESSAGE
+# =========================
+
+async def add_message_to_conversation(
+    db: AsyncSession,
+    conversation_id: int,
+    role: str,
+    content: str
+) -> Message:
+
+    message = Message(
+        conversation_id=conversation_id,
+        role=role,
+        content=content
+    )
+
+    db.add(message)
+    await db.commit()
+    await db.refresh(message)
+
+    return message
+
+
+
+# =========================
+# GET CHAT HISTORY
+# =========================
+
+async def get_conversation_history(
+    db: AsyncSession,
+    user_id: int,
+    conversation_id: int | None = None,
+    limit: int = 20
+) -> list[dict]:
+    """
+    Get conversation history.
+    If conversation_id is provided, get messages for that specific conversation.
+    Otherwise, get recent messages from all user conversations.
+    """
+    query = (
+        select(Message)
+        .join(Conversation)
+        .where(
+            Conversation.user_id == user_id,
+            Message.role.in_(["user", "assistant"]),
+        )
+    )
+    
+    # If conversation_id is provided, filter by it
+    if conversation_id:
+        query = query.where(Message.conversation_id == conversation_id)
+    
+    query = query.order_by(Message.created_at.desc()).limit(limit)
+    
+    result = await db.execute(query)
+    messages = result.scalars().all()
+    
+    # Reverse to get chronological order
+    messages = list(reversed(messages))
+    
+    return [
+        {
+            "role": msg.role,
+            "content": msg.content
+        }
+        for msg in messages
+    ]

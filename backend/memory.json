@@ -10,11 +10,19 @@
     "history": [
         {
             "role": "user",
+            "content": "what is my name?"
+        },
+        {
+            "role": "assistant",
+            "content": "I don't have access to your name or personal information. If you'd like to share your name, feel free!"
+        },
+        {
+            "role": "user",
             "content": "my name is indira"
         },
         {
             "role": "assistant",
-            "content": "Hello Indira! It's nice to meet you. How can I assist you today?"
+            "content": "Nice to meet you, Indira! How can I assist you today?"
         },
         {
             "role": "user",
@@ -22,23 +30,31 @@
         },
         {
             "role": "assistant",
-            "content": "Your name is Indira! How can I assist you further today?"
+            "content": "Your name is Indira. How can I assist you today?"
         },
         {
             "role": "user",
-            "content": "what is my name?"
+            "content": "Calculate four multiply five?"
         },
         {
             "role": "assistant",
-            "content": "Your name is Indira! How can I assist you further today?"
+            "content": "The result of four multiplied by five is 20. How else can I assist you today, Indira?"
         },
         {
             "role": "user",
-            "content": "what is AI?"
+            "content": "Is it currently raining in madhapur,hyderabad?"
         },
         {
             "role": "assistant",
-            "content": "AI, or Artificial Intelligence, refers to the simulation of human intelligence in machines that are programmed to think and learn like humans. It encompasses various technologies and techniques, including machine learning, natural language processing, and robotics, enabling machines to perform tasks that typically require human intelligence. These tasks can include understanding language, recognizing patterns, making decisions, and solving problems. \n\nIf you have more specific questions about AI or its applications, feel free to ask!"
+            "content": "It is currently not raining in Hyderabad; the temperature is 26.2 °C with a wind speed of 13.2 km/h. If you have any other questions or need further assistance, feel free to ask!"
+        },
+        {
+            "role": "user",
+            "content": "if two sides of a right angled triangle are 3 and 4, what could be the values of the third side?"
+        },
+        {
+            "role": "assistant",
+            "content": "In a right-angled triangle where the two sides are 3 and 4, the possible values for the third side could be:\n\n1. The hypotenuse (longest side) calculated using the Pythagorean theorem is 5 (since \\( \\sqrt{3^2 + 4^2} = 5 \\)).\n2. The sum of the two sides, which is 7 (3 + 4).\n3. The difference between the two sides, which is 1 (4 - 3).\n\nSo, the values for the third side could be 1, 5, or 7. If you have any further questions, feel free to ask!"
         }
     ]
 }
