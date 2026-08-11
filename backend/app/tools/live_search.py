@@ -63,25 +63,45 @@ def live_search(query: str) -> str:
     Use this tool for information that changes over time.
 
     MUST use for:
+    - current date
+    - today's date
+    - tomorrow's date
+    - yesterday's date
+    - current day of the week
+    - tomorrow's day of the week
+    - yesterday's day of the week
+    - current time
+    - current time in another location
     - latest news
     - today's news
     - current events
     - recent updates
+    - current office holders
+    - political positions
     - IPL winner
     - sports results
     - stock prices
     - elections
     - latest technology updates
     - live information
-    - current weather
+    - current weather when get_weather is not available
     - breaking news
+
+    Date questions:
+    - Always use this tool for current or relative date questions.
+    - When the user asks for a date, search for BOTH the exact date
+      and the corresponding day of the week.
+    - For example, "tomorrow date" must return tomorrow's date AND
+      its weekday.
+    - Do not rely on the model's internal knowledge for current dates.
 
     Location rules:
     - AP in India context means Andhra Pradesh.
     - Do not assume AP means Associated Press.
 
-    Never answer these questions from memory.
+    Never answer current or latest information from memory.
     """
+   
 
     cleaned_query = (query or "").strip()
     if not cleaned_query:

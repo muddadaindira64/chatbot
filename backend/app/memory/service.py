@@ -33,13 +33,29 @@ async def update_memory(
 ):
     """Extract and persist personal memories for the authenticated user."""
     try:
+        logger.info("MEMORY_UPDATE_START user_id=%s message=%s", user_id, message)
         analysis_result = await analyze_personal_information(message)
+        logger.info("MEMORY_ANALYZER_RESULT user_id=%s result=%s", user_id, analysis_result)
 
         if not analysis_result.get("is_personal", False):
+            logger.info("MEMORY_NOT_PERSONAL user_id=%s message=%s", user_id, message)
             return
 
-        extracted_data = analysis_result.get("data", {}) or {}
+        # Handle both formats:
+        # 1. New key/value format: {"is_personal": true, "key": "name", "value": "Guna"}
+        # 2. Legacy data dict format: {"is_personal": true, "data": {"name": "Guna"}}
+        extracted_data = {}
+
+        key = analysis_result.get("key")
+        value = analysis_result.get("value")
+
+        if key and value is not None:
+            extracted_data = {str(key): value}
+        else:
+            extracted_data = analysis_result.get("data", {}) or {}
+
         if not extracted_data:
+            logger.info("MEMORY_NO_DATA user_id=%s", user_id)
             return
 
         for key, value in extracted_data.items():
@@ -47,6 +63,7 @@ async def update_memory(
                 for preference_key, preference_value in value.items():
                     if preference_value is None:
                         continue
+                    logger.info("MEMORY_UPSERT user_id=%s key=%s value=%s", user_id, preference_key, str(preference_value))
                     await upsert_personal_memory(
                         db,
                         user_id,
@@ -54,11 +71,17 @@ async def update_memory(
                         str(preference_value),
                     )
             elif key in {"name", "role", "company"} and value:
+                logger.info("MEMORY_UPSERT user_id=%s key=%s value=%s", user_id, key, str(value))
                 await upsert_personal_memory(db, user_id, key, str(value))
             elif key == "skills" and isinstance(value, list):
                 for skill in value:
                     if skill:
+                        logger.info("MEMORY_UPSERT user_id=%s key=skill value=%s", user_id, str(skill))
                         await upsert_personal_memory(db, user_id, "skill", str(skill))
+            else:
+                # Generic personal memory (e.g. location, preferences, any other key)
+                logger.info("MEMORY_UPSERT user_id=%s key=%s value=%s", user_id, key, str(value))
+                await upsert_personal_memory(db, user_id, str(key), str(value))
 
         logger.info(
             "Updated personal memories for user %s with keys: %s",

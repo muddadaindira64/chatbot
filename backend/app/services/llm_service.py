@@ -1,4 +1,4 @@
-﻿import logging
+import logging
 from collections.abc import Generator
 from typing import Any
 
@@ -38,7 +38,7 @@ class LLMService:
                 api_key=self.api_key,
                 base_url=self.base_url,
                 temperature=0.1,
-                max_tokens=512,
+                max_tokens=250,
                 timeout=180,
             )
 
@@ -78,7 +78,9 @@ class LLMService:
         logger.info(
             "Calling LLM with tools"
         )
-
+        print("MODEL:", self.model)
+        print("MAX TOKENS:", self.client.max_tokens)
+        print("MESSAGE COUNT:", len(messages))
         response = await llm.ainvoke(
             messages
         )

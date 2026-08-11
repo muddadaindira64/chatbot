@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/v1/feedback", tags=["feedback"])
 
 
-@router.post("/", response_model=dict, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=dict, status_code=status.HTTP_201_CREATED)
 async def create_feedback(
     feedback_data: FeedbackCreate,
     current_user = Depends(get_current_user),
@@ -59,6 +59,26 @@ async def create_feedback(
                 detail="You can only provide feedback for your own conversations"
             )
         
+        # Check for existing feedback for this user + message
+        result = await db.execute(
+            select(Feedback).where(
+                Feedback.user_id == current_user.id,
+                Feedback.message_id == message.id,
+            )
+        )
+        existing_feedback = result.scalar_one_or_none()
+
+        if existing_feedback:
+            # Update existing feedback instead of creating a duplicate
+            existing_feedback.rating = feedback_data.rating
+            existing_feedback.comment = feedback_data.comment
+            await db.commit()
+            await db.refresh(existing_feedback)
+            return {
+                "message": "Feedback updated successfully",
+                "feedback_id": existing_feedback.id
+            }
+
         # Create feedback
         feedback = Feedback(
             user_id=current_user.id,

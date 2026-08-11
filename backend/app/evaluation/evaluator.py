@@ -31,7 +31,8 @@ class ResponseEvaluator:
                 model="openai/gpt-4o-mini",
                 api_key=settings.openrouter_api_key,
                 base_url=settings.openrouter_base_url,
-                temperature=0.1  # Low temperature for consistent evaluation
+                temperature=0.1,  # Low temperature for consistent evaluation
+                max_tokens=500
             )
         return self._client
     

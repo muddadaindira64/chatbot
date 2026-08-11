@@ -18,6 +18,7 @@ class ChatResponse(BaseModel):
     tool: ChatToolResponse | None = None
     requires_tool: bool = False
     conversation_id: int | None = None
+    message_id: int | None = None
 
 
 class NewChatResponse(BaseModel):

@@ -15,6 +15,7 @@ const normalizeAssistantPayload = (payload) => {
     content: typeof payload.message === 'string' ? payload.message : '',
     conversationId: payload.conversation_id ?? null,
     tool: payload.tool?.name || null,
+    messageId: payload.message_id ?? null,
   };
 };
 
@@ -89,7 +90,7 @@ const Chat = () => {
     }
   }, [refreshConversationMessages]);
 
-  const updateAssistantMessage = useCallback((content, tool = null, localId = null) => {
+  const updateAssistantMessage = useCallback((content, tool = null, localId = null, messageId = null) => {
     setMessages((prev) => {
       const updated = [...prev];
       const index = localId
@@ -101,6 +102,7 @@ const Chat = () => {
           ...updated[index],
           content,
           tool,
+          messageId,
         };
       }
 
@@ -128,13 +130,15 @@ const Chat = () => {
       const response = await sendMessage(currentConversationId, trimmedContent);
       console.log('CHAT RESPONSE:', response);
       const normalized = normalizeAssistantPayload(response);
+      console.log('ASSISTANT MESSAGE ID:', normalized.messageId);
+      console.log('ASSISTANT TOOL:', normalized.tool);
 
       if (normalized.conversationId) {
         currentConversationId = normalized.conversationId;
         setConversationId(normalized.conversationId);
       }
 
-      updateAssistantMessage(normalized.content || '', normalized.tool, assistantMessage.localId);
+      updateAssistantMessage(normalized.content || '', normalized.tool, assistantMessage.localId, normalized.messageId);
       setLoading(false);
       setHistoryRefreshKey((key) => key + 1);
     } catch (error) {

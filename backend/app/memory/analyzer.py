@@ -1,4 +1,4 @@
-﻿import json
+import json
 import logging
 from typing import Dict, Any
 
@@ -33,7 +33,8 @@ class PersonalInfoAnalyzer:
                 model="openai/gpt-4o-mini",
                 api_key=settings.openrouter_api_key,
                 base_url=settings.openrouter_base_url,
-                temperature=0.1  # Low temperature for consistent extraction
+                temperature=0.1,  # Low temperature for consistent extraction
+                max_tokens=256,   # Prevent OpenRouter 402 errors due to implicit 16k max_tokens
             )
         return self._client
 

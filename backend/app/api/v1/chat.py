@@ -1,4 +1,4 @@
-﻿import asyncio
+import asyncio
 import logging
 import re
 import time
@@ -98,10 +98,10 @@ async def _finish_and_evaluate(
     conversation_id: int,
     question: str,
     answer: str,
-) -> None:
+) -> int | None:
     """Save the assistant message and trigger background evaluation."""
     if not answer.strip():
-        return
+        return None
 
     assistant_message = await add_message_to_conversation(
         db=db,
@@ -110,6 +110,7 @@ async def _finish_and_evaluate(
         content=answer.strip(),
     )
     logger.info("Assistant message saved")
+    message_id = assistant_message.id
 
     logger.info("Evaluation started")
 
@@ -132,6 +133,8 @@ async def _finish_and_evaluate(
 
     asyncio.create_task(run_evaluation())
 
+    return message_id
+
 
 async def generate_chat_response(
     request: ChatRequest,
@@ -146,11 +149,7 @@ async def generate_chat_response(
     logger.info("Processing chat for conversation %s", conversation_id)
 
     try:
-        stage = "loading_memory_and_history"
-        logger.info("Entering Personal Information Analyzer")
-        memory_context = await build_user_context(db, current_user.id)
-        logger.info("Memory context loaded for user %s", current_user.id)
-
+        stage = "loading_history"
         history = await get_conversation_history(
             db,
             current_user.id,
@@ -169,27 +168,14 @@ async def generate_chat_response(
         )
         logger.info("User message saved")
 
-        stage = "updating_memory"
-        logger.info("Updating user memory")
-        await update_memory(db, current_user.id, request.message)
-        logger.info("User memory updated")
 
         stage = "generating_llm_response"
-        history_text = "\n".join(
-            f"{item['role']}: {item['content']}" for item in history
-        ) if history else ""
-        workflow_prompt = (
-            f"User Personal Memory:\n{memory_context or 'None'}\n\n"
-            f"Conversation History:\n{history_text or 'None'}\n\n"
-            f"User Message:\n{request.message}"
-        )
-
         workflow = ChatWorkflow()
         final_answer, used_tool_name, used_tool_output = await workflow.run(
             message=request.message,
             user_id=current_user.id,
             conversation_id=conversation_id,
-            memory_context=memory_context,
+            memory_context=None,
             history=history,
         )
 
@@ -204,7 +190,7 @@ async def generate_chat_response(
 
         final_answer = (final_answer or "").strip() or "I could not generate a response. Please try again."
 
-        await _finish_and_evaluate(
+        message_id = await _finish_and_evaluate(
             db=db,
             current_user=current_user,
             conversation_id=conversation_id,
@@ -217,6 +203,7 @@ async def generate_chat_response(
             "tool": _response_tool_payload(frontend_tool),
             "requires_tool": bool(frontend_tool.get("requires_tool")),
             "conversation_id": conversation_id,
+            "message_id": message_id,
         }
 
     except HTTPException:
@@ -232,7 +219,7 @@ async def generate_chat_response(
         logger.info("Chat request completed in %.2f ms", elapsed_ms)
 
 
-@router.post("/chat", response_model=ChatResponse, response_model_exclude={"tool": {"requires_tool"}})
+@router.post("/chat", response_model=ChatResponse)
 async def chat_with_ai(
     request: ChatRequest,
     http_request: Request,
