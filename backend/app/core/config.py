@@ -20,7 +20,10 @@ class Settings(BaseSettings):
         default="sqlite:///./chatgpt_clone.db",
         alias="SQLITE_DATABASE_URL",
     )
-    secret_key: str = Field(default="change-this-secret-key", alias="SECRET_KEY")
+    secret_key: str = Field(
+        default="change-this-secret-key-to-a-secure-32-byte-key",
+        alias="SECRET_KEY",
+    )
     jwt_algorithm: str = Field(default="HS256", alias="JWT_ALGORITHM")
     openrouter_api_key: str = Field(default="", alias="OPENROUTER_API_KEY")
     openrouter_base_url: str = Field(

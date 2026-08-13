@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 
 from app.api.routes import router as api_router
 from app.api.v1.chat import router as chat_router
@@ -20,9 +21,20 @@ logging.getLogger("httpcore").setLevel(logging.WARNING)
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     setup_logging()
-    # Create tables asynchronously
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Ensure existing SQLite schema includes tool_name on messages
+        result = await conn.execute(
+            text(
+                "SELECT name FROM pragma_table_info('messages') WHERE name = 'tool_name';"
+            )
+        )
+        if result.first() is None:
+            await conn.execute(
+                text(
+                    "ALTER TABLE messages ADD COLUMN tool_name VARCHAR(100) NULL"
+                )
+            )
     yield
 
 

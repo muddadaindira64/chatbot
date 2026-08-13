@@ -1,14 +1,7 @@
 ﻿import Feedback from './Feedback';
 
-const TOOL_LABELS = {
-  live_search: '🔎 Tool: live_search',
-  calculator: '🧮 Tool: calculator',
-  get_weather: '🌤️ Tool: get_weather',
-  get_datetime: '📅 Tool: get_datetime',
-};
-
 const Message = ({ role, content, tool, messageId }) => {
-  const toolLabel = tool && TOOL_LABELS[tool] ? TOOL_LABELS[tool] : null;
+  const toolLabel = tool ? `🔧 Tool: ${tool}` : null;
 
   return (
     <div className={`mb-6 ${role === 'user' ? 'text-right' : 'text-left'}`}>

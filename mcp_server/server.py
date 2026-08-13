@@ -1,0 +1,700 @@
+import asyncio
+import datetime
+import json
+import re
+import os
+import sys
+import urllib.parse
+import urllib.request
+from pathlib import Path
+
+from mcp.server import MCPServer
+
+
+# ============================================================
+# UTF-8 CONSOLE CONFIGURATION
+# ============================================================
+
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
+
+# ============================================================
+# LOAD ENVIRONMENT VARIABLES
+# ============================================================
+
+def load_env():
+    root = Path(__file__).resolve().parent.parent
+
+    env_paths = [
+        root / "backend" / ".env",
+        root / ".env",
+    ]
+
+    for env_path in env_paths:
+        if env_path.is_file():
+            with open(env_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+
+                    if (
+                        line
+                        and not line.startswith("#")
+                        and "=" in line
+                    ):
+                        key, value = line.split("=", 1)
+
+                        key = key.strip()
+                        value = value.strip()
+
+                        if key not in os.environ:
+                            os.environ[key] = value
+
+
+load_env()
+
+
+# ============================================================
+# MCP SERVER
+# ============================================================
+
+mcp = MCPServer("ChatGPT Tools")
+
+
+# ============================================================
+# 1. MCP CALCULATOR
+# ============================================================
+
+@mcp.tool()
+def calculator(expression: str) -> str:
+    """
+    Calculate numerical expressions and quantitative math problems.
+
+    IMPORTANT:
+    Use this tool whenever the user's question requires numerical calculation,
+    even when the calculation is presented as a word problem.
+
+    Supports:
+    - Addition, subtraction, multiplication, division
+    - Percentages
+    - Fractions
+    - Ratios and proportions
+    - Averages
+    - Profit and loss
+    - Interest and compound interest
+    - Speed, distance, and time
+    - Powers
+    - Parentheses
+    - Geometry formulas
+    - Area, perimeter, circumference
+    - Volume and surface area
+
+    For word problems, convert the problem into a mathematical expression
+    and use this calculator instead of calculating the final numeric answer
+    yourself.
+
+    Examples:
+        25 / 100 * 1840
+        84000 * 6 / (3 + 5 + 6)
+        (180 + 240) / (180 / 60 + 240 / 80)
+        85000 * (1 + 0.075 / 4) ** 24
+    """
+
+    expression = (expression or "").strip()
+
+    if not expression:
+        return "Error: No mathematical expression provided."
+
+    try:
+        # Remove commas from numbers.
+        # Example: 1,840 -> 1840
+        expression = expression.replace(",", "")
+
+        # Convert natural-language percentage expressions.
+        # Example: 25% of 1840 -> (25 / 100) * 1840
+        expression = re.sub(
+            r"([0-9]+(?:\.[0-9]+)?)\s*%\s*of\s*([0-9]+(?:\.[0-9]+)?)",
+            r"(\1 / 100) * \2",
+            expression,
+            flags=re.IGNORECASE,
+        )
+
+        # Convert remaining percent values.
+        expression = re.sub(
+            r"([0-9]+(?:\.[0-9]+)?)%",
+            r"(\1 / 100)",
+            expression,
+        )
+
+        # Allow phrase-based percent input as a defensive fallback.
+        expression = re.sub(
+            r"([0-9]+(?:\.[0-9]+)?)\s*percent\s*of\s*([0-9]+(?:\.[0-9]+)?)",
+            r"(\1 / 100) * \2",
+            expression,
+            flags=re.IGNORECASE,
+        )
+
+        # Evaluate only with builtins disabled.
+        result = eval(
+            expression,
+            {
+                "__builtins__": {},
+            },
+            {},
+        )
+
+        # Convert 460.0 -> 460
+        if isinstance(result, float) and result.is_integer():
+            result = int(result)
+
+        return str(result)
+
+    except ZeroDivisionError:
+        return "Error: Cannot divide by zero."
+
+    except (SyntaxError, NameError, TypeError, ValueError):
+        return "Error: Invalid mathematical expression."
+
+    except Exception as e:
+        return f"Error: Calculation failed: {str(e)}"
+
+
+# ============================================================
+# 2. MCP SEARCH
+# ============================================================
+
+@mcp.tool()
+def search(query: str) -> str:
+    """
+    Real-time internet search tool.
+
+    The LLM is responsible for understanding the user's intent
+    and generating the appropriate search query.
+
+    This MCP server does NOT rewrite, classify, or modify
+    the user's search query.
+
+    The received query is sent directly to Tavily.
+
+    Args:
+        query: Search query generated by the LLM.
+
+    Returns:
+        Formatted Tavily search results.
+    """
+
+    cleaned_query = (query or "").strip()
+
+    if not cleaned_query:
+        return "No search query provided."
+
+    tavily_key = os.getenv("TAVILY_API_KEY", "")
+
+    if not tavily_key:
+        return (
+            "Sorry, search service is not configured "
+            "(missing TAVILY_API_KEY)."
+        )
+
+    url = "https://api.tavily.com/search"
+
+    # --------------------------------------------------------
+    # IMPORTANT:
+    # Do NOT modify the query here.
+    #
+    # Example:
+    #
+    # LLM -> "latest IPL winner"
+    # MCP -> "latest IPL winner"
+    # Tavily -> search
+    #
+    # LLM -> "IPL 2023 winner"
+    # MCP -> "IPL 2023 winner"
+    # Tavily -> search
+    # --------------------------------------------------------
+
+    provider_query = cleaned_query
+
+    try:
+        print(
+            f"MCP search query -> {provider_query}",
+            file=sys.stderr,
+        )
+    except Exception:
+        pass
+
+    # --------------------------------------------------------
+    # TAVILY PAYLOAD
+    # --------------------------------------------------------
+
+    payload = {
+        "api_key": tavily_key,
+        "query": provider_query,
+        "search_depth": "advanced",
+        "max_results": 5,
+        "include_answer": True,
+    }
+
+    try:
+        print(
+            "MCP search payload -> "
+            + json.dumps(
+                {
+                    key: value
+                    for key, value in payload.items()
+                    if key != "api_key"
+                }
+            ),
+            file=sys.stderr,
+        )
+
+    except Exception:
+        pass
+
+    # --------------------------------------------------------
+    # CALL TAVILY
+    # --------------------------------------------------------
+
+    try:
+        request = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+
+        with urllib.request.urlopen(
+            request,
+            timeout=15,
+        ) as response:
+
+            data = json.loads(
+                response.read().decode("utf-8")
+            )
+
+    except Exception as e:
+        return f"Error executing search: {str(e)}"
+
+    # --------------------------------------------------------
+    # EXTRACT RESPONSE
+    # --------------------------------------------------------
+
+    results = data.get("results") or []
+
+    answer = str(
+        data.get("answer") or ""
+    ).strip()
+
+    try:
+        print(
+            f"MCP search answer -> {answer}",
+            file=sys.stderr,
+        )
+
+        for index, item in enumerate(
+            results[:5],
+            start=1,
+        ):
+            title = str(
+                item.get("title", "")
+            ).strip()
+
+            source_url = str(
+                item.get("url", "")
+            ).strip()
+
+            print(
+                f"MCP search result {index} -> "
+                f"{title} | {source_url}",
+                file=sys.stderr,
+            )
+
+    except Exception:
+        pass
+
+    if not results and not answer:
+        return (
+            "No relevant search results found "
+            "for this query."
+        )
+
+    # --------------------------------------------------------
+    # FORMAT RESPONSE
+    # --------------------------------------------------------
+
+    sections = []
+
+    if answer:
+        sections.append(
+            f"Tavily Summary:\n{answer}"
+        )
+
+    if results:
+
+        result_lines = [
+            "Search Results:"
+        ]
+
+        for index, item in enumerate(
+            results[:5],
+            start=1,
+        ):
+
+            title = str(
+                item.get("title", "")
+            ).strip()
+
+            content = str(
+                item.get("content", "")
+            ).strip()
+
+            source_url = str(
+                item.get("url", "")
+            ).strip()
+
+            if len(content) > 280:
+                content = (
+                    content[:280]
+                    .rstrip()
+                    + "..."
+                )
+
+            result_lines.extend(
+                [
+                    f"Result {index}",
+                    f"Title: {title}",
+                    f"Content: {content}",
+                    f"Source: {source_url}",
+                    "",
+                ]
+            )
+
+        sections.append(
+            "\n".join(
+                result_lines
+            ).strip()
+        )
+
+    return "\n\n".join(
+        section
+        for section in sections
+        if section
+    ).strip()
+
+
+# ============================================================
+# 3. MCP WEATHER
+# ============================================================
+
+@mcp.tool()
+def weather(
+    city: str,
+    date: str = "",
+) -> str:
+    """
+    Get weather information for a city.
+
+    Args:
+        city: Name of the city.
+        date: Optional date
+              (today, tomorrow, yesterday, YYYY-MM-DD).
+
+    Returns:
+        Weather report.
+    """
+
+    if not city:
+        return "Please specify a city name."
+
+    try:
+
+        # ----------------------------------------------------
+        # GEOCODING
+        # ----------------------------------------------------
+
+        geo_url = (
+            "https://geocoding-api.open-meteo.com/v1/search?"
+            f"name={urllib.parse.quote(city)}"
+            "&count=1"
+            "&language=en"
+            "&format=json"
+        )
+
+        request = urllib.request.Request(
+            geo_url
+        )
+
+        with urllib.request.urlopen(
+            request,
+            timeout=10,
+        ) as response:
+
+            geo_response = json.loads(
+                response.read().decode("utf-8")
+            )
+
+        if (
+            "results" not in geo_response
+            or not geo_response["results"]
+        ):
+            return f"Cannot find location: {city}"
+
+        location = geo_response["results"][0]
+
+        lat = location["latitude"]
+        lon = location["longitude"]
+
+        # ----------------------------------------------------
+        # CURRENT WEATHER
+        # ----------------------------------------------------
+
+        if not date:
+
+            weather_url = (
+                "https://api.open-meteo.com/v1/forecast?"
+                f"latitude={lat}"
+                f"&longitude={lon}"
+                "&current="
+                "temperature_2m,"
+                "apparent_temperature,"
+                "relative_humidity_2m,"
+                "precipitation,"
+                "weather_code,"
+                "wind_speed_10m"
+                "&timezone=auto"
+            )
+
+            request = urllib.request.Request(
+                weather_url
+            )
+
+            with urllib.request.urlopen(
+                request,
+                timeout=10,
+            ) as response:
+
+                weather_response = json.loads(
+                    response.read().decode("utf-8")
+                )
+
+            current = weather_response["current"]
+
+            return f"""
+Current weather in {city}:
+
+Temperature: {current['temperature_2m']} C
+Feels like: {current['apparent_temperature']} C
+Humidity: {current['relative_humidity_2m']}%
+Precipitation: {current['precipitation']} mm
+Wind Speed: {current['wind_speed_10m']} km/h
+Weather Code: {current['weather_code']}
+""".strip()
+
+        # ----------------------------------------------------
+        # DATE-BASED WEATHER
+        # ----------------------------------------------------
+
+        today_date = datetime.date.today()
+
+        requested_date = (
+            date.lower().strip()
+        )
+
+        if requested_date == "today":
+
+            target_date = today_date
+
+        elif requested_date == "tomorrow":
+
+            target_date = (
+                today_date
+                + datetime.timedelta(days=1)
+            )
+
+        elif requested_date == "yesterday":
+
+            target_date = (
+                today_date
+                - datetime.timedelta(days=1)
+            )
+
+        else:
+
+            try:
+
+                target_date = (
+                    datetime.datetime.strptime(
+                        date,
+                        "%Y-%m-%d",
+                    ).date()
+                )
+
+            except ValueError:
+
+                return (
+                    "Invalid date format. "
+                    "Use today, tomorrow, "
+                    "yesterday, or YYYY-MM-DD."
+                )
+
+        target_date_str = (
+            target_date.isoformat()
+        )
+
+        if target_date < today_date:
+
+            base_url = (
+                "https://archive-api.open-meteo.com/v1/archive"
+            )
+
+        else:
+
+            base_url = (
+                "https://api.open-meteo.com/v1/forecast"
+            )
+
+        daily_url = (
+            f"{base_url}?"
+            f"latitude={lat}"
+            f"&longitude={lon}"
+            f"&start_date={target_date_str}"
+            f"&end_date={target_date_str}"
+            "&daily="
+            "temperature_2m_max,"
+            "temperature_2m_min,"
+            "precipitation_sum,"
+            "precipitation_probability_max,"
+            "weather_code"
+            "&timezone=auto"
+        )
+
+        request = urllib.request.Request(
+            daily_url
+        )
+
+        with urllib.request.urlopen(
+            request,
+            timeout=10,
+        ) as response:
+
+            weather_response = json.loads(
+                response.read().decode("utf-8")
+            )
+
+        if "daily" not in weather_response:
+
+            return (
+                f"No weather data available "
+                f"for {city} on {target_date_str}."
+            )
+
+        daily = weather_response["daily"]
+
+        max_temp = daily[
+            "temperature_2m_max"
+        ][0]
+
+        min_temp = daily[
+            "temperature_2m_min"
+        ][0]
+
+        precipitation = daily[
+            "precipitation_sum"
+        ][0]
+
+        weather_code = daily[
+            "weather_code"
+        ][0]
+
+        rain_prob = daily.get(
+            "precipitation_probability_max"
+        )
+
+        if (
+            rain_prob
+            and rain_prob[0] is not None
+        ):
+            rain_text = (
+                f"{rain_prob[0]}%"
+            )
+        else:
+            rain_text = "Not available"
+
+        return f"""
+Weather in {city} on {target_date_str}:
+
+Maximum Temperature: {max_temp} C
+Minimum Temperature: {min_temp} C
+Rain Probability: {rain_text}
+Precipitation: {precipitation} mm
+Weather Code: {weather_code}
+""".strip()
+
+    except Exception as e:
+
+        return (
+            f"Error fetching weather: {str(e)}"
+        )
+
+
+# ============================================================
+# 4. MCP TIME / DATE
+# ============================================================
+@mcp.tool()
+def time_date(query: str = "today") -> str:
+    """
+    Get the current date and time or relative dates.
+
+    Supports:
+    - current time
+    - current date
+    - today
+    - tomorrow
+    - yesterday
+    """
+
+    now = datetime.datetime.now()
+    query_lower = (query or "today").lower().strip()
+
+    # Current time
+    if "time" in query_lower:
+        return (
+            f"Current time: {now.strftime('%I:%M:%S %p')}, "
+            f"{now.strftime('%B %d, %Y')} "
+            f"({now.strftime('%A')})"
+        )
+
+    # Tomorrow
+    if "tomorrow" in query_lower:
+        target = now + datetime.timedelta(days=1)
+        return (
+            f"Tomorrow: {target.strftime('%B %d, %Y')} "
+            f"({target.strftime('%A')})"
+        )
+
+    # Yesterday
+    if "yesterday" in query_lower:
+        target = now - datetime.timedelta(days=1)
+        return (
+            f"Yesterday: {target.strftime('%B %d, %Y')} "
+            f"({target.strftime('%A')})"
+        )
+
+    # Today / current date
+    return (
+        f"Today: {now.strftime('%B %d, %Y')} "
+        f"({now.strftime('%A')})"
+    )
+# ============================================================
+# START MCP SERVER
+# ============================================================
+
+if __name__ == "__main__":
+    asyncio.run(
+        mcp.run_stdio_async()
+    )

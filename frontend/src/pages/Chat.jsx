@@ -4,7 +4,7 @@ import Sidebar from '../components/Sidebar';
 import ChatWindow from '../components/ChatWindow';
 import InputBox from '../components/InputBox';
 import { getConversations, getConversationMessages } from '../api/conversations';
-import { sendMessage } from '../api/chat';
+import { streamMessage } from '../api/chat';
 
 const normalizeAssistantPayload = (payload) => {
   if (!payload || typeof payload !== 'object') {
@@ -24,6 +24,7 @@ const transformConversationMessages = (data = []) => {
     id: msg.id,
     role: msg.role,
     content: msg.content || '',
+    tool: msg.tool || null,
   }));
 };
 
@@ -126,23 +127,30 @@ const Chat = () => {
     setMessages((prev) => [...prev, userMessage, assistantMessage]);
     setLoading(true);
 
-    try {
-      const response = await sendMessage(currentConversationId, trimmedContent);
-      console.log('CHAT RESPONSE:', response);
-      const normalized = normalizeAssistantPayload(response);
-      console.log('ASSISTANT MESSAGE ID:', normalized.messageId);
-      console.log('ASSISTANT TOOL:', normalized.tool);
+    let streamedContent = '';
+    let selectedTool = null;
 
-      if (normalized.conversationId) {
-        currentConversationId = normalized.conversationId;
-        setConversationId(normalized.conversationId);
+    try {
+      const result = await streamMessage(currentConversationId, trimmedContent, (event) => {
+        if (event.type === 'tool') {
+          selectedTool = event.name || null;
+          updateAssistantMessage('', selectedTool, assistantMessage.localId);
+        } else if (event.type === 'content') {
+          streamedContent += event.content || '';
+          updateAssistantMessage(streamedContent, selectedTool, assistantMessage.localId);
+        }
+      });
+
+      if (result.conversation_id) {
+        currentConversationId = result.conversation_id;
+        setConversationId(result.conversation_id);
       }
 
-      updateAssistantMessage(normalized.content || '', normalized.tool, assistantMessage.localId, normalized.messageId);
+      updateAssistantMessage(streamedContent || 'No response generated.', selectedTool, assistantMessage.localId, result.message_id);
       setLoading(false);
       setHistoryRefreshKey((key) => key + 1);
     } catch (error) {
-      console.error('Failed to send message:', error);
+      console.error('Failed to stream message:', error);
       updateAssistantMessage('Sorry, I encountered an error. Please try again.', null, assistantMessage.localId);
       setLoading(false);
     }

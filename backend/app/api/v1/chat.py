@@ -2,9 +2,11 @@ import asyncio
 import logging
 import re
 import time
+import json
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.responses import StreamingResponse
 
 from app.auth.dependencies import get_current_user_or_guest
 from app.core.config import settings
@@ -98,6 +100,7 @@ async def _finish_and_evaluate(
     conversation_id: int,
     question: str,
     answer: str,
+    tool_name: str | None = None,
 ) -> int | None:
     """Save the assistant message and trigger background evaluation."""
     if not answer.strip():
@@ -108,6 +111,7 @@ async def _finish_and_evaluate(
         conversation_id=conversation_id,
         role="assistant",
         content=answer.strip(),
+        tool_name=tool_name,
     )
     logger.info("Assistant message saved")
     message_id = assistant_message.id
@@ -196,6 +200,7 @@ async def generate_chat_response(
             conversation_id=conversation_id,
             question=request.message,
             answer=final_answer,
+            tool_name=used_tool_name,
         )
 
         return {
@@ -273,6 +278,85 @@ async def chat_with_ai(
         ) from exc
 
 
+@router.post("/chat/stream")
+async def chat_stream(
+    request: ChatRequest,
+    current_user=Depends(get_current_user_or_guest),
+    db=Depends(get_db),
+):
+    if not settings.openrouter_api_key:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="OpenRouter API key is not configured.",
+        )
+
+    conversation_id = request.conversation_id
+    if conversation_id:
+        conversation = await get_conversation(db, conversation_id, current_user.id)
+        if not conversation:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Conversation not found",
+            )
+    else:
+        conversation = await create_new_conversation(
+            db=db,
+            user_id=current_user.id,
+            title=request.message[:50],
+        )
+        conversation_id = conversation.id
+
+    history = await get_conversation_history(
+        db,
+        current_user.id,
+        conversation_id=conversation_id,
+        limit=20,
+    )
+
+    await add_message_to_conversation(
+        db=db,
+        conversation_id=conversation_id,
+        role="user",
+        content=request.message,
+    )
+
+    async def event_generator():
+        workflow = ChatWorkflow()
+        full_response = []
+        selected_tool = None
+
+        async for event in workflow.stream(
+            message=request.message,
+            user_id=current_user.id,
+            conversation_id=conversation_id,
+            history=history,
+        ):
+            if event.get("type") == "tool":
+                selected_tool = event.get("name")
+
+            if event.get("type") == "content":
+                full_response.append(event.get("content", ""))
+            yield f"data: {json.dumps(event)}\n\n"
+
+        final_text = "".join(full_response).strip()
+        message_id = await _finish_and_evaluate(
+            db=db,
+            current_user=current_user,
+            conversation_id=conversation_id,
+            question=request.message,
+            answer=final_text or "No response generated.",
+            tool_name=selected_tool,
+        )
+        done_event = {
+            "type": "done",
+            "conversation_id": conversation_id,
+            "message_id": message_id,
+        }
+        yield f"data: {json.dumps(done_event)}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
 @router.post("/new-chat", response_model=NewChatResponse)
 async def new_chat(
     current_user=Depends(get_current_user_or_guest),
@@ -287,3 +371,4 @@ async def new_chat(
         conversation_id=conversation.id,
         message="New chat created"
     )
+

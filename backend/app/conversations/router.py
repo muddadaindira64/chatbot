@@ -117,6 +117,7 @@ async def get_conversation_messages(
             "conversation_id": msg.conversation_id,
             "role": msg.role,
             "content": msg.content,
+            "tool": msg.tool_name,
             "created_at": msg.created_at,
         }
         for msg in messages

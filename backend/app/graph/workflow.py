@@ -1,6 +1,8 @@
+import asyncio
 import logging
 from collections.abc import AsyncGenerator
 from typing import Annotated, Any, TypedDict
+from langchain_core.messages import ToolMessage
 
 from langchain_core.messages import (
     AIMessage,
@@ -15,7 +17,7 @@ from langgraph.prebuilt import tools_condition
 
 from app.database.database import AsyncSessionLocal
 from app.graph.personal_memory_node import personal_memory_analyzer
-from app.graph.tools_node import tool_execution_node
+from app.graph.tools_node import atool_execution_node, tool_execution_node
 from app.memory.context import build_user_context
 from app.prompts.chat_prompt import SYSTEM_PROMPT
 from app.services.llm_service import LLMService
@@ -88,6 +90,17 @@ class ChatWorkflow:
                 content=SYSTEM_PROMPT
             )
         ]
+
+        # Inject user memory as a SystemMessage when provided
+        if memory_context:
+            memory_message = SystemMessage(
+                content=(
+                    "IMPORTANT USER INFORMATION:\n"
+                    f"{memory_context}\n\n"
+                    "Use this information when answering questions about the user."
+                )
+            )
+            messages.append(memory_message)
 
         # =====================================================
         # CURRENT CONVERSATION HISTORY
@@ -518,63 +531,98 @@ class ChatWorkflow:
         message: str,
         user_id: int | None = None,
         conversation_id: int | None = None,
-    ) -> AsyncGenerator[str, None]:
+        history: list[dict[str, str]] | None = None,
+    ) -> AsyncGenerator[dict[str, Any], None]:
 
         logger.info(
-            "STREAM START "
-            "user_id=%s conversation_id=%s",
+            "STREAM START user_id=%s conversation_id=%s",
             user_id,
             conversation_id,
         )
 
-        async for chunk in self.graph.astream(
-            {
-                "messages": [
-                    SystemMessage(
-                        content=SYSTEM_PROMPT
-                    ),
-                    HumanMessage(
-                        content=message
-                    ),
-                ],
+        # Load current user memory for streaming path.
+        # This preserves previously stored personal memories.
+        memory_context = ""
+        if user_id is not None:
+            try:
+                async with AsyncSessionLocal() as db:
+                    memory_context = await build_user_context(db=db, user_id=user_id)
+            except Exception:
+                logger.exception("Failed to load memory for streaming user_id=%s", user_id)
 
-                "user_id": user_id,
+        # Build messages for the current request.
+        messages = self.build_messages(
+            message=message,
+            memory_context=(memory_context or None),
+            history=history,
+        )
 
-                "conversation_id": conversation_id,
-
-                "loaded_memory": "",
-            }
-        ):
-
-            if "llm_node" not in chunk:
-                continue
-
-            messages = (
-                chunk["llm_node"].get(
-                    "messages",
-                    [],
+        # Persist any new personal memory from the current user message.
+        if user_id is not None:
+            try:
+                await _async_personal_memory_node(
+                    {
+                        "messages": messages,
+                        "user_id": user_id,
+                        "conversation_id": conversation_id,
+                    }
                 )
-            )
 
-            if not messages:
-                continue
+                async with AsyncSessionLocal() as db:
+                    memory_context = await build_user_context(db=db, user_id=user_id)
 
-            msg = messages[-1]
+                messages = self.build_messages(
+                    message=message,
+                    memory_context=(memory_context or None),
+                    history=history,
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to persist or reload memory for streaming user_id=%s",
+                    user_id,
+                )
 
-            # Do not stream tool-call messages
-            if getattr(
-                msg,
-                "tool_calls",
-                None,
-            ):
-                continue
+        # 1. First LLM check for tool calls
+        llm = self.llm_service.get_tools_client()
+        first_response = await llm.ainvoke(messages)
+        tool_calls = getattr(first_response, "tool_calls", None) or []
 
-            content = getattr(
-                msg,
-                "content",
-                None,
-            )
+        tool_name = None
+        if tool_calls:
+            first_call = tool_calls[0]
+            if isinstance(first_call, dict):
+                tool_name = first_call.get("name")
+            else:
+                tool_name = getattr(first_call, "name", None)
 
+            if tool_name:
+                logger.info("STREAM TOOL SELECTED: %s", tool_name)
+                yield {"type": "tool", "name": tool_name}
+
+                # 2. Execute MCP tool via async tool_execution_node
+                tool_result_dict = await atool_execution_node({"messages": [first_response]})
+                tool_result_messages = tool_result_dict.get("messages", [])
+
+                messages.append(first_response)
+                messages.extend(tool_result_messages)
+
+                # 3. Stream final answer from LLM token by token
+                logger.info("STREAMING LLM ANSWER AFTER TOOL EXECUTION")
+                previous_content = ""
+
+                async for content in self.llm_service.astream_response(messages):
+                    if not content:
+                        continue
+                    # Prevent exact repeated chunks
+                    if content == previous_content:
+                        continue
+                    previous_content = content
+                    yield {"type": "content", "content": content}
+                return
+
+        # No tool calls needed - stream direct response tokens
+        logger.info("STREAMING DIRECT LLM ANSWER")
+        async for chunk in self.llm_service.get_client().astream(messages):
+            content = getattr(chunk, "content", "")
             if content:
-
-                yield content
+                yield {"type": "content", "content": content}

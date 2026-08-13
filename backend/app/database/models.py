@@ -161,6 +161,13 @@ class Message(Base):
     )
 
 
+    tool_name: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+        default=None,
+    )
+
+
     created_at: Mapped[datetime] = mapped_column(
         default=datetime.utcnow
     )

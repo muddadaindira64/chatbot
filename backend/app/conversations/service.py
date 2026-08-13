@@ -124,13 +124,15 @@ async def add_message_to_conversation(
     db: AsyncSession,
     conversation_id: int,
     role: str,
-    content: str
+    content: str,
+    tool_name: str | None = None,
 ) -> Message:
 
     message = Message(
         conversation_id=conversation_id,
         role=role,
-        content=content
+        content=content,
+        tool_name=tool_name,
     )
 
     db.add(message)
