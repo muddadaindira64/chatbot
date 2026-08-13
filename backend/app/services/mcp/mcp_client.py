@@ -26,7 +26,6 @@ PROJECT_ROOT = get_project_root()
 
 MCP_PYTHON = (
     PROJECT_ROOT
-    / "mcp_server"
     / ".venv"
     / "Scripts"
     / "python.exe"

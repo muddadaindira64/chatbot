@@ -648,47 +648,64 @@ Weather Code: {weather_code}
 @mcp.tool()
 def time_date(query: str = "today") -> str:
     """
-    Get the current date and time or relative dates.
+    Get current time or date.
 
-    Supports:
-    - current time
-    - current date
-    - today
-    - tomorrow
-    - yesterday
+    Behavior:
+    - time -> current time + date + day
+    - date/today -> current date + day
+    - tomorrow -> tomorrow's date + day
+    - yesterday -> yesterday's date + day
     """
 
     now = datetime.datetime.now()
     query_lower = (query or "today").lower().strip()
 
-    # Current time
+    # --------------------------------------------------------
+    # TIME REQUEST
+    # Time + Date + Day
+    # --------------------------------------------------------
+
     if "time" in query_lower:
         return (
-            f"Current time: {now.strftime('%I:%M:%S %p')}, "
-            f"{now.strftime('%B %d, %Y')} "
-            f"({now.strftime('%A')})"
+            f"Current time: {now.strftime('%I:%M:%S %p')}\n"
+            f"Date: {now.strftime('%B %d, %Y')}\n"
+            f"Day: {now.strftime('%A')}"
         )
 
-    # Tomorrow
+    # --------------------------------------------------------
+    # TOMORROW
+    # Date + Day
+    # --------------------------------------------------------
+
     if "tomorrow" in query_lower:
         target = now + datetime.timedelta(days=1)
+
         return (
-            f"Tomorrow: {target.strftime('%B %d, %Y')} "
-            f"({target.strftime('%A')})"
+            f"Date: {target.strftime('%B %d, %Y')}\n"
+            f"Day: {target.strftime('%A')}"
         )
 
-    # Yesterday
+    # --------------------------------------------------------
+    # YESTERDAY
+    # Date + Day
+    # --------------------------------------------------------
+
     if "yesterday" in query_lower:
         target = now - datetime.timedelta(days=1)
+
         return (
-            f"Yesterday: {target.strftime('%B %d, %Y')} "
-            f"({target.strftime('%A')})"
+            f"Date: {target.strftime('%B %d, %Y')}\n"
+            f"Day: {target.strftime('%A')}"
         )
 
-    # Today / current date
+    # --------------------------------------------------------
+    # TODAY / DATE
+    # Date + Day
+    # --------------------------------------------------------
+
     return (
-        f"Today: {now.strftime('%B %d, %Y')} "
-        f"({now.strftime('%A')})"
+        f"Date: {now.strftime('%B %d, %Y')}\n"
+        f"Day: {now.strftime('%A')}"
     )
 # ============================================================
 # START MCP SERVER

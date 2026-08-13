@@ -220,5 +220,16 @@ mcp_time_date = StructuredTool.from_function(
     func=_mcp_time_date_sync,
     coroutine=_mcp_time_date_async,
     name="mcp_time_date",
-    description="Get current date, day of the week, and time using the MCP time_date server.",
+    description=(
+        "Get the current date and time. "
+        "IMPORTANT: Always provide the query argument. "
+        "For a time question such as 'what time is it' or 'current time', "
+        "call with query='time'. "
+        "For a date question such as 'what is today's date', "
+        "call with query='date'. "
+        "For tomorrow, call with query='tomorrow'. "
+        "For yesterday, call with query='yesterday'. "
+        "When the user asks for the current time, return current time, "
+        "date, and day of the week."
+    ),
 )
