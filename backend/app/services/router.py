@@ -7,16 +7,16 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.services.llm_service import LLMService
 
-
 logger = logging.getLogger(__name__)
 
 
 class ToolRouter:
     """
-    Production Tool Router.
+    LLM-based tool router.
 
-    Uses LLM only for tool selection.
-    It never generates final answers.
+    The LLM decides which MCP tool should be used.
+    This router does not perform keyword-based routing.
+    It does not generate the final answer.
     """
 
     def __init__(self):
@@ -25,122 +25,175 @@ class ToolRouter:
         self.router_prompt = """
 You are an AI Tool Router.
 
-Your ONLY task is selecting exactly one tool:
-mcp_search, mcp_calculator, mcp_weather, mcp_time_date, none.
+Your ONLY responsibility is to decide whether the user's request
+requires an MCP tool.
 
-You MUST NOT answer the user.
-You MUST NOT explain anything.
+You MUST NOT answer the user's question.
 
-Return ONLY JSON:
+You MUST return ONLY valid JSON in this exact format:
 
 {
   "tool": "mcp_search|mcp_calculator|mcp_weather|mcp_time_date|none",
-  "input": "tool input"
+  "input": "appropriate input for the selected tool"
 }
 
-IMPORTANT:
-Use ONLY MCP tools for tool-based requests.
-Never select search, calculator, weather, or any non-MCP tool.
-
-TOOL SELECTION RULES:
+AVAILABLE MCP TOOLS:
 
 1. mcp_search
-Use mcp_search for:
-- current information
-- latest information
-- news
-- current events
-- sports results
-- IPL winner
-- current Prime Minister / Chief Minister
-- current politicians
-- current prices
-- live information
-- recent updates
 
-If the user asks "Who won IPL?" without a year:
-- interpret it as the latest completed IPL season
-- return:
+Use this for information that requires internet/current information.
+
+Examples:
+- latest news
+- current events
+- recent updates
+- live information
+- sports results
+- IPL results
+- IPL winner
+- current political information
+- current Prime Minister
+- current Chief Minister
+- current prices
+- elections
+- latest technology information
+- any question where the answer may have changed recently
+
+IMPORTANT:
+
+If the user asks:
+
+"Who is the winner of IPL?"
+
+Do NOT assume an old year.
+
+Interpret it as:
+
+"Who is the winner of the most recently completed IPL season?"
+
+Return:
+
 {
   "tool": "mcp_search",
   "input": "latest IPL winner"
 }
 
-If the user specifies a year:
+If the user asks:
+
 "Who won IPL 2023?"
-return:
+
+Return:
+
 {
   "tool": "mcp_search",
   "input": "IPL 2023 winner"
 }
 
-Never change an unspecified IPL query to an old year such as 2023.
+If the user asks:
 
-For current office holders:
+"Who is the current CM of AP?"
 
-"Who is PM of India?"
-→ "current Prime Minister of India"
+Understand AP as Andhra Pradesh and return:
 
-"Who is CM of AP?"
-→ "current Chief Minister of Andhra Pradesh"
+{
+  "tool": "mcp_search",
+  "input": "current Chief Minister of Andhra Pradesh"
+}
 
-"Who is CM of Telangana?"
-→ "current Chief Minister of Telangana"
+If the user asks:
 
-"Who is CM of Tamil Nadu?"
-→ "current Chief Minister of Tamil Nadu"
+"Who is the current Prime Minister of India?"
 
+Return:
+
+{
+  "tool": "mcp_search",
+  "input": "current Prime Minister of India"
+}
+
+Do NOT use hardcoded answers.
+Do NOT rely on your internal knowledge for current information.
 
 2. mcp_calculator
 
-Use mcp_calculator for:
+Use this for mathematical calculations.
+
+Examples:
+- 10 + 20
+- 25% of 500
+- 123 * 45
+- 100 / 4
+- mathematical expressions
 - arithmetic
 - percentages
-- equations
-- mathematical calculations
 
 Example:
 
 User:
-Calculate 2 plus 9 into 4
+What is 25 percent of 800?
 
 Return:
 
 {
   "tool": "mcp_calculator",
-  "input": "2 + 9 * 4"
+  "input": "25% of 800"
 }
-
 
 3. mcp_weather
 
-Use mcp_weather for:
+Use this for weather-related requests.
+
+Examples:
 - current weather
 - temperature
 - rain
-- forecast
+- rainfall
 - humidity
 - wind
-
-If location is available in memory or conversation history, use it.
+- weather forecast
+- weather tomorrow
+- weather today
 
 Example:
+
+User:
+What is the weather in Hyderabad?
+
+Return:
 
 {
   "tool": "mcp_weather",
   "input": "Hyderabad"
 }
 
+If the user specifies a date, preserve it.
+
+Example:
+
+User:
+What will the weather be in Hyderabad tomorrow?
+
+Return:
+
+{
+  "tool": "mcp_weather",
+  "input": "Hyderabad, tomorrow"
+}
 
 4. mcp_time_date
 
-Use mcp_time_date for:
+Use this for date and time requests.
+
+Examples:
+- today's date
+- tomorrow's date
+- yesterday's date
 - current date
 - current time
-- today
-- tomorrow
-- yesterday
-- day/date questions
+- what day is today
+- what day will tomorrow be
+- date questions
+- day-of-week questions
 
 Example:
 
@@ -154,32 +207,77 @@ Return:
   "input": "today"
 }
 
+Example:
+
+User:
+What date is tomorrow?
+
+Return:
+
+{
+  "tool": "mcp_time_date",
+  "input": "tomorrow"
+}
 
 5. none
 
-Use none for:
-- greetings
-- normal conversation
-- explanations
-- writing
-- coding help
-- opinions
-- questions that do not require a tool
+Use "none" when no MCP tool is required.
 
-IMPORTANT CURRENT INFORMATION RULE:
+Examples:
+- hi
+- hello
+- how are you
+- explain what is an agent
+- explain MCP
+- coding questions
+- programming explanations
+- writing requests
+- general knowledge that does not require current information
+- casual conversation
 
-Whenever the user asks for current/latest/recent/today/now information,
-prefer the appropriate MCP tool.
+IMPORTANT DECISION RULES:
 
-For sports questions without a year, interpret the question as asking
-for the latest completed season.
+1. Understand the user's meaning semantically.
+2. Do NOT rely on simple keyword matching.
+3. Do NOT rewrite every query using fixed keywords.
+4. Select the MCP tool based on the intent of the question.
+5. For current/latest/recent/live information, use mcp_search.
+6. For mathematical calculations, use mcp_calculator.
+7. For weather, use mcp_weather.
+8. For date/time questions, use mcp_time_date.
+9. Otherwise use none.
+10. Never answer the user's question yourself.
+11. Never invent tool results.
+12. Return JSON only.
+13. Never add markdown.
+14. Never add explanations.
 
-Never use old cached knowledge when MCP search is available.
+CURRENT INFORMATION RULE:
 
-Return JSON only.
-Never add markdown.
-Never add explanations.
+If there is any reasonable possibility that the requested information
+has changed over time, use mcp_search.
+
+For sports competitions such as IPL:
+
+- No year specified -> latest completed season.
+- Year specified -> that specific year's result.
+
+For political office holders:
+
+- Use mcp_search.
+- Do not rely on model knowledge.
+- Understand natural-language variations such as:
+  "CM of AP"
+  "Andhra Pradesh CM"
+  "who runs AP"
+  "who is leading Andhra Pradesh"
+  when they clearly refer to the current Chief Minister.
+
+The final answer will be generated separately after the selected MCP tool
+returns its result.
 """
+
+
     async def classify(
         self,
         message: str,
@@ -188,6 +286,7 @@ Never add explanations.
     ) -> dict[str, Any]:
 
         conversation_history = ""
+
         if history:
             conversation_history = "\n".join(
                 f"{msg['role']}: {msg['content']}"
@@ -195,21 +294,24 @@ Never add explanations.
             )
 
         prompt = f"""
-User question:
+USER QUESTION:
 
 {message}
 
-User memory:
-{memory_context or 'None'}
+USER MEMORY:
 
-Conversation history:
-{conversation_history or 'None'}
+{memory_context or "None"}
+
+CONVERSATION HISTORY:
+
+{conversation_history or "None"}
+
+Now determine whether an MCP tool is required.
 
 Return JSON only.
 """
 
         try:
-
             response = self.llm.invoke(
                 [
                     SystemMessage(
@@ -217,99 +319,126 @@ Return JSON only.
                     ),
                     HumanMessage(
                         content=prompt
-                    )
+                    ),
                 ]
             )
 
             content = getattr(
                 response,
                 "content",
-                response
+                response,
             )
+
             raw_text = str(content).strip()
 
             logger.info(
-                "Router response: %s",
-                raw_text
+                "ROUTER RAW RESPONSE: %s",
+                raw_text,
             )
 
+            # Extract JSON if model accidentally adds extra text.
             json_text = raw_text
+
             if not raw_text.startswith("{"):
-                match = re.search(r"(\{.*\})", raw_text, re.S)
+                match = re.search(
+                    r"\{.*\}",
+                    raw_text,
+                    re.S,
+                )
+
                 if match:
-                    json_text = match.group(1)
+                    json_text = match.group(0)
 
             decision = json.loads(json_text)
 
+            tool = str(
+                decision.get(
+                    "tool",
+                    "none",
+                )
+            ).strip()
 
-            tool = decision.get(
-                "tool",
-                "none"
-            )
+            tool_input = str(
+                decision.get(
+                    "input",
+                    "",
+                )
+            ).strip()
 
-            tool_input = decision.get(
-                "input",
-                ""
-            )
+            # IMPORTANT:
+            # Only MCP tool names are allowed.
+            allowed_tools = {
+                "mcp_search",
+                "mcp_calculator",
+                "mcp_weather",
+                "mcp_time_date",
+                "none",
+            }
 
-
-            if tool not in [
-                "search",
-                "calculator",
-                "weather",
-                "none"
-            ]:
+            if tool not in allowed_tools:
+                logger.warning(
+                    "Router returned invalid tool: %s",
+                    tool,
+                )
                 tool = "none"
-
-
-            if tool == "weather" and not tool_input:
                 tool_input = ""
-            elif tool != "none" and not tool_input:
-                tool_input = message
 
+            # If the LLM selected a tool but did not provide input,
+            # use the original user message.
+            if tool != "none" and not tool_input:
+                tool_input = message
 
             if tool == "none":
                 tool_input = ""
 
-
-            return {
-
+            result = {
                 "tool": tool,
-
                 "input": tool_input,
-
-                "tool_used":
+                "tool_used": (
                     None
                     if tool == "none"
-                    else tool,
-
+                    else tool
+                ),
                 "tool_output": None,
-
-                "requires_tool":
-                    tool != "none"
+                "requires_tool": tool != "none",
             }
 
+            logger.info(
+                "ROUTER DECISION: %s",
+                result,
+            )
+
+            return result
+
+        except json.JSONDecodeError as exc:
+
+            logger.exception(
+                "Router returned invalid JSON: %s",
+                exc,
+            )
+
+            return {
+                "tool": "none",
+                "input": "",
+                "tool_used": None,
+                "tool_output": None,
+                "requires_tool": False,
+            }
 
         except Exception as exc:
 
             logger.exception(
                 "Router failed: %s",
-                exc
+                exc,
             )
 
             return {
-
                 "tool": "none",
-
                 "input": "",
-
                 "tool_used": None,
-
                 "tool_output": None,
-
-                "requires_tool": False
+                "requires_tool": False,
             }
-
 
 
 router = ToolRouter()

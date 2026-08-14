@@ -31,7 +31,7 @@ const ChatWindow = ({ messages, loading }) => {
               role={message.role}
               content={message.content}
               tool={message.tool}
-              messageId={message.messageId || message.id || null}
+              qmessageId={message.messageId || message.id || null}
             />
           ))}
           {loading && (

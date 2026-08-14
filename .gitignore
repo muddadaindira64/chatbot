@@ -16,5 +16,6 @@ dist/
 .log
 vector_db/
 .vscode/
-
+.sqlite
+.sqlite3
 node_modules/
